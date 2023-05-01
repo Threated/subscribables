@@ -26,10 +26,14 @@ impl<T> Default for SubscribableVec<T> {
 }
 
 impl<T> SubscribableVec<T> {
+    /// Default broadcast channel buffer size for `SubscribableMap`.
+    pub const DEFAULT_BROADCAST_BUFFER_SIZE: usize = 16;
+
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Same as [`Vec::with_capacity`].
     pub fn with_capacity(capacity: usize) -> Self {
         let (updates, _) = broadcast::channel(16);
         Self {
@@ -38,6 +42,8 @@ impl<T> SubscribableVec<T> {
         }
     }
     
+    /// Initializes an empty `SubscribableVec` with the buffer size of the broadcast channel
+    /// set to `capacity`.
     pub fn with_broadcast_capacity(capacity: usize) -> Self {
         let (updates, _) = broadcast::channel(capacity);
         Self {
@@ -46,6 +52,8 @@ impl<T> SubscribableVec<T> {
         }
     }
 
+    /// Initializes an empty `SubscribableVec` with a vec capacity of `vec_capacity` and
+    /// the buffer size of the broadcast channel set to `broadcast_capacity`.
     pub fn with_vec_and_broadcast_capacity(vec_capacity: usize, broadcast_capacity: usize) -> Self {
         let (updates, _) = broadcast::channel(broadcast_capacity);
         Self {
@@ -54,6 +62,7 @@ impl<T> SubscribableVec<T> {
         }
     }
 
+    /// Wrapper around [`Vec::get_mut`] that emits an [`Update::Mutation`] event if the index exists.
     pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
         if let Some(val) = self.vec.get_mut(index) {
             _ = self.updates.send(Update::Mutation(index));
@@ -63,28 +72,38 @@ impl<T> SubscribableVec<T> {
         }
     }
 
+    /// Wrapper around [`Vec::push`] that emits an [`Update::Addition`].
     pub fn push(&mut self, value: T) {
         _ = self.updates.send(Update::Addition(self.vec.len()));
         self.vec.push(value);
     }
 
+    /// Wrapper around [`Vec::pop`] that emits an [`Update::Deletion`].
     pub fn pop(&mut self) -> Option<T> {
-        let res = self.vec.pop();
-        _ = self.updates.send(Update::Deletion(self.vec.len()));
-        res
+        if let Some(val) = self.vec.pop() {
+            _ = self.updates.send(Update::Deletion(self.vec.len()));
+            Some(val)
+        } else {
+            None
+        }
     }
 
+    /// Wrapper around [`Vec::pop`] that emits an [`Update::Deletion`].
     pub fn remove(&mut self, index: usize) -> T {
         let val = self.vec.remove(index);
         _ = self.updates.send(Update::Deletion(index));
         val
     }
 
+    /// Wrapper around [`Vec::insert`] that emits an [`Update::Addition`].
     pub fn insert(&mut self, index: usize, element: T) {
         self.vec.insert(index, element);
         let _ = self.updates.send(Update::Addition(index));
     }
 
+    /// Subscribe to mutations of this `SubscribableVec`
+    ///
+    /// This method returns a [`broadcast::Receiver`] of [`Update`]s that can be matched upon.
     pub fn subscribe(&self) -> Receiver<Update<usize>> {
         self.updates.subscribe()
     }
