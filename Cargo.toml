@@ -10,4 +10,4 @@ license = "MIT"
 tokio = { version = "1", features = ["sync"] }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["sync", "macros", "rt", "time"] }
+tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread", "time"] }

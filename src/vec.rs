@@ -4,6 +4,11 @@ use tokio::sync::broadcast::{self, Receiver};
 
 use crate::Update;
 
+/// A subscribable `Vec`
+///
+/// This type works just like a regular [`Vec`] but adds a [`SubscribableVec::subscribe`]
+/// method that allows subscribing to any kind of mutation of the underlying `Vec`.
+/// For more information about the kinds of mutations that are tracked see [`Update`].
 #[derive(Debug)]
 pub struct SubscribableVec<T> {
     vec: Vec<T>,
@@ -18,34 +23,11 @@ impl<T> Deref for SubscribableVec<T> {
     }
 }
 
-impl<T> Default for SubscribableVec<T> {
-    fn default() -> Self {
-        let (updates, _) = broadcast::channel(16);
-        Self { vec: Default::default(), updates }
-    }
-}
-
 impl<T> SubscribableVec<T> {
-    /// Default broadcast channel buffer size for `SubscribableMap`.
-    pub const DEFAULT_BROADCAST_BUFFER_SIZE: usize = 16;
 
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Same as [`Vec::with_capacity`].
-    pub fn with_capacity(capacity: usize) -> Self {
-        let (updates, _) = broadcast::channel(16);
-        Self {
-            updates,
-            vec: Vec::with_capacity(capacity)
-        }
-    }
-    
-    /// Initializes an empty `SubscribableVec` with the buffer size of the broadcast channel
-    /// set to `capacity`.
-    pub fn with_broadcast_capacity(capacity: usize) -> Self {
-        let (updates, _) = broadcast::channel(capacity);
+    /// Create a new empty `SubscribableVec` with the specified broadcast buffer capacity.
+    pub fn new(broadcast_capacity: usize) -> Self {
+        let (updates, _) = broadcast::channel(broadcast_capacity);
         Self {
             updates,
             vec: Vec::new()
@@ -62,7 +44,7 @@ impl<T> SubscribableVec<T> {
         }
     }
 
-    /// Wrapper around [`Vec::get_mut`] that emits an [`Update::Mutation`] event if the index exists.
+    /// Wrapper around `Vec::get_mut` that emits an [`Update::Mutation`] event if the index exists.
     pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
         if let Some(val) = self.vec.get_mut(index) {
             _ = self.updates.send(Update::Mutation(index));
@@ -134,7 +116,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_subscription() {
-        let sub_vec = Arc::new(RwLock::new(SubscribableVec::<i32>::new()));
+        let sub_vec = Arc::new(RwLock::new(SubscribableVec::<i32>::new(1)));
         let m1 = sub_vec.clone();
         let m2 = sub_vec.clone();
         let r1 = sub_vec.read().await.subscribe();

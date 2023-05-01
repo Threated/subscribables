@@ -5,10 +5,10 @@ use tokio::sync::broadcast;
 
 use crate::Update;
 
-/// A subscribable hash map
+/// A subscribable `HashMap`
 ///
 /// This type works just like a regular [`HashMap`] but adds a [`SubscribableMap::subscribe`]
-/// method that allows subscribing to any kind of mutation of the underlying map.
+/// method that allows subscribing to any kind of mutation of the underlying `HashMap`.
 /// For more information about the kinds of mutations that are tracked see [`Update`].
 #[derive(Debug, Clone)]
 pub struct SubscribableMap<K, V>
@@ -31,41 +31,10 @@ where
 }
 
 
-impl<K: Clone + Eq + Hash, V> Default for SubscribableMap<K, V> {
-    fn default() -> Self {
-        let (updates, _) = broadcast::channel(Self::DEFAULT_BROADCAST_BUFFER_SIZE);
-        Self {
-            map: Default::default(),
-            updates,
-        }
-    }
-}
-
 impl<K, V> SubscribableMap<K, V>
 where
     K: Hash + Eq + Clone,
 {
-    /// Default broadcast channel buffer size for `SubscribableMap`.
-    pub const DEFAULT_BROADCAST_BUFFER_SIZE: usize = 16;
-
-    /// Same as [`HashMap::with_capacity`].
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            map: HashMap::with_capacity(capacity),
-            ..Default::default()
-        }
-    }
-
-    /// Initializes an empty `SubscribableMap` with the buffer size of the broadcast channel
-    /// set to `capacity`.
-    pub fn with_broadcast_capacity(capacity: usize) -> Self {
-        let (updates, _) = broadcast::channel(capacity);
-        Self {
-            map: Default::default(),
-            updates,
-        }
-    }
-
     /// Initializes an empty `SubscribableMap` with a hash map capacity of `map_capacity` and
     /// the buffer size of the broadcast channel set to `broadcast_capacity`.
     pub fn with_map_and_broadcast_capacity(map_capacity: usize, broadcast_capacity: usize) -> Self {
@@ -76,11 +45,13 @@ where
         }
     }
 
-    /// Create a new empty `SubscribableMap`.
-    ///
-    /// The default broadcast buffer size is set to [`SubscribableMap::DEFAULT_BROADCAST_BUFFER_SIZE`]
-    pub fn new() -> Self {
-        Self::default()
+    /// Create a new empty `SubscribableMap` with the given `broadcast_capacity`
+    pub fn new(broadcast_capacity: usize) -> Self {
+        let (updates, _) = broadcast::channel(broadcast_capacity);
+        Self {
+            map: Default::default(),
+            updates,
+        }
     }
 
     /// Wrapper around [`HashMap::get_mut`] that emits an [`Update::Mutation`] event if the key
@@ -140,7 +111,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_subscription() {
-        let map = Arc::new(RwLock::new(SubscribableMap::<i32, i32>::new()));
+        let map = Arc::new(RwLock::new(SubscribableMap::<i32, i32>::new(1)));
         let m1 = map.clone();
         let m2 = map.clone();
         let r1 = map.read().await.subscribe();
@@ -152,21 +123,21 @@ mod tests {
                     assert_eq!(val, 1);
                     assert_eq!(map.read().await.get(&1), Some(&2));
                 },
-                e => assert!(false, "Wrong result {e:?}")
+                e => panic!("Wrong result {e:?}")
             };
             match rec.recv().await {
                 Ok(Update::Mutation(val)) => {
                     assert_eq!(val, 1);
                     assert_eq!(map.read().await.get(&1), Some(&3));
                 },
-                e => assert!(false, "Wrong result {e:?}")
+                e => panic!("Wrong result {e:?}")
             };
             match rec.recv().await {
                 Ok(Update::Deletion(val)) => {
                     assert_eq!(val, 1);
                     assert_eq!(map.read().await.get(&1), None);
                 },
-                e => assert!(false, "Wrong result {e:?}")
+                e => panic!("Wrong result {e:?}")
             };
         }
 
