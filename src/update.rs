@@ -1,5 +1,5 @@
 
-/// An update entry to the subscribed data structure.
+/// An update event emited by the subscribe method of the underlying data structure.
 /// This type is generic over the kind of key used to index or access values in the subscribed data structure.
 /// # Note
 /// This type makes no guarantees about the values at the keys locations.

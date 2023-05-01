@@ -5,6 +5,11 @@ use tokio::sync::broadcast;
 
 use crate::Update;
 
+/// A subscribable hash map
+///
+/// This type works just like a regular [`HashMap`] but adds a [`SubscribableMap::subscribe`]
+/// method that allows subscribing to any kind of mutation of the underlying map.
+/// For more information about the kinds of mutations that are tracked see [`Update`].
 #[derive(Debug, Clone)]
 pub struct SubscribableMap<K, V>
 where
@@ -26,9 +31,9 @@ where
 }
 
 
-impl<K: Clone, V> Default for SubscribableMap<K, V> {
+impl<K: Clone + Eq + Hash, V> Default for SubscribableMap<K, V> {
     fn default() -> Self {
-        let (updates, _) = broadcast::channel(16);
+        let (updates, _) = broadcast::channel(Self::DEFAULT_BROADCAST_BUFFER_SIZE);
         Self {
             map: Default::default(),
             updates,
@@ -40,6 +45,10 @@ impl<K, V> SubscribableMap<K, V>
 where
     K: Hash + Eq + Clone,
 {
+    /// Default broadcast channel buffer size for `SubscribableMap`.
+    pub const DEFAULT_BROADCAST_BUFFER_SIZE: usize = 16;
+
+    /// Same as [`HashMap::with_capacity`].
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             map: HashMap::with_capacity(capacity),
@@ -47,6 +56,8 @@ where
         }
     }
 
+    /// Initializes an empty `SubscribableMap` with the buffer size of the broadcast channel
+    /// set to `capacity`.
     pub fn with_broadcast_capacity(capacity: usize) -> Self {
         let (updates, _) = broadcast::channel(capacity);
         Self {
@@ -55,6 +66,8 @@ where
         }
     }
 
+    /// Initializes an empty `SubscribableMap` with a hash map capacity of `map_capacity` and
+    /// the buffer size of the broadcast channel set to `broadcast_capacity`.
     pub fn with_map_and_broadcast_capacity(map_capacity: usize, broadcast_capacity: usize) -> Self {
         let (updates, _) = broadcast::channel(broadcast_capacity);
         Self {
@@ -63,10 +76,15 @@ where
         }
     }
 
+    /// Create a new empty `SubscribableMap`.
+    ///
+    /// The default broadcast buffer size is set to [`SubscribableMap::DEFAULT_BROADCAST_BUFFER_SIZE`]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Wrapper around [`HashMap::get_mut`] that emits an [`Update::Mutation`] event if the key
+    /// was found.
     pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
         if let Some(v) = self.map.get_mut(key) {
             _ = self.updates.send(Update::Mutation(key.clone()));
@@ -76,16 +94,19 @@ where
         }
     }
 
+    /// Wrapper around [`HashMap::insert`] that emits an [`Update::Addition`] if the key is new and
+    /// an [`Update::Mutation`] if the key was already present. 
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
-        if self.map.contains_key(&key) {
-            Some(value)
+        if let Some(old) = self.map.insert(key.clone(), value) {
+            _ = self.updates.send(Update::Mutation(key));
+            Some(old)
         } else {
-            self.map.insert(key.clone(), value);
             _ = self.updates.send(Update::Addition(key));
             None
         }
     }
 
+    /// Wrapper around [`HashMap::remove`] that emits an [`Update::Deletion`] if the key was present.
     pub fn remove(&mut self, key: &K) -> Option<V> {
         if let Some(v) = self.map.remove(key) {
             _ = self.updates.send(Update::Deletion(key.clone()));
@@ -95,6 +116,9 @@ where
         }
     }
 
+    /// Subscribe to mutations of this `SubscribableMap`
+    ///
+    /// This method returns a [`broadcast::Receiver`] of [`Update`]s that can be matched upon.
     pub fn subscribe(&self) -> broadcast::Receiver<Update<K>> {
         self.updates.subscribe()
     }
